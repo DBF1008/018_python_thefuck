@@ -62,14 +62,18 @@ def organize_commands(corrected_commands):
     except StopIteration:
         return
 
-    without_duplicates = {
-        command for command in sorted(
-            corrected_commands, key=lambda command: command.priority)
-        if command != first_command}
+    first_key = (first_command.script, first_command.side_effect)
+    best = {}
+    for command in corrected_commands:
+        key = (command.script, command.side_effect)
+        if key == first_key:
+            continue
+        existing = best.get(key)
+        if existing is None or command.priority < existing.priority:
+            best[key] = command
 
-    sorted_commands = sorted(
-        without_duplicates,
-        key=lambda corrected_command: corrected_command.priority)
+    sorted_commands = sorted(best.values(),
+                             key=lambda c: c.priority)
 
     logs.debug(u'Corrected commands: {}'.format(
         ', '.join(u'{}'.format(cmd) for cmd in [first_command] + sorted_commands)))
