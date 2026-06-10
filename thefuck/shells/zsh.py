@@ -64,11 +64,22 @@ class Zsh(Generic):
             value = value[1:-1]
         return name, value
 
-    @memoize
     def get_aliases(self):
-        raw_aliases = os.environ.get('TF_SHELL_ALIASES', '').split('\n')
-        return dict(self._parse_alias(alias)
-                    for alias in raw_aliases if alias and '=' in alias)
+        raw = os.environ.get('TF_SHELL_ALIASES', '')
+        if not memoize.disabled and raw == self._aliases_cache_key:
+            return self._aliases_cache_value
+
+        raw_aliases = raw.split('\n')
+        result = dict(self._parse_alias(alias)
+                      for alias in raw_aliases if alias and '=' in alias)
+
+        if not memoize.disabled:
+            self._aliases_cache_key = raw
+            self._aliases_cache_value = result
+        return result
+
+    _aliases_cache_key = None
+    _aliases_cache_value = None
 
     def _get_history_file_name(self):
         return os.environ.get("HISTFILE",

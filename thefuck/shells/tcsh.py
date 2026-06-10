@@ -17,13 +17,24 @@ class Tcsh(Generic):
         name, value = alias.split("\t", 1)
         return name, value
 
-    @memoize
     def get_aliases(self):
+        current_path = os.environ.get('PATH', '')
+        if not memoize.disabled and current_path == self._aliases_cache_path:
+            return self._aliases_cache_value
+
         proc = Popen(['tcsh', '-ic', 'alias'], stdout=PIPE, stderr=DEVNULL)
-        return dict(
+        result = dict(
             self._parse_alias(alias)
             for alias in proc.stdout.read().decode('utf-8').split('\n')
             if alias and '\t' in alias)
+
+        if not memoize.disabled:
+            self._aliases_cache_path = current_path
+            self._aliases_cache_value = result
+        return result
+
+    _aliases_cache_path = None
+    _aliases_cache_value = None
 
     def _get_history_file_name(self):
         return os.environ.get("HISTFILE",

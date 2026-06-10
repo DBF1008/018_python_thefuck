@@ -108,9 +108,16 @@ def include_path_in_search(path):
     return not any(path.startswith(x) for x in settings.excluded_search_path_prefixes)
 
 
-@memoize
 def get_all_executables():
     from thefuck.shells import shell
+
+    env_path = os.environ.get('PATH', '')
+    shell_aliases_env = os.environ.get('TF_SHELL_ALIASES', '')
+    excluded = tuple(settings.excluded_search_path_prefixes or [])
+    cache_key = (env_path, shell_aliases_env, excluded)
+
+    if not memoize.disabled and get_all_executables._cache_key == cache_key:
+        return get_all_executables._cache_value
 
     def _safe(fn, fallback):
         try:
@@ -122,7 +129,7 @@ def get_all_executables():
     tf_entry_points = ['thefuck', 'fuck']
 
     bins = [exe.name.decode('utf8') if six.PY2 else exe.name
-            for path in os.environ.get('PATH', '').split(os.pathsep)
+            for path in env_path.split(os.pathsep)
             if include_path_in_search(path)
             for exe in _safe(lambda: list(Path(path).iterdir()), [])
             if not _safe(exe.is_dir, True)
@@ -130,7 +137,17 @@ def get_all_executables():
     aliases = [alias.decode('utf8') if six.PY2 else alias
                for alias in shell.get_aliases() if alias != tf_alias]
 
-    return bins + aliases
+    result = bins + aliases
+
+    if not memoize.disabled:
+        get_all_executables._cache_key = cache_key
+        get_all_executables._cache_value = result
+
+    return result
+
+
+get_all_executables._cache_key = None
+get_all_executables._cache_value = None
 
 
 def replace_argument(script, from_, to):
@@ -278,7 +295,6 @@ def cache(*depends_on):
 
     """
     def cache_decorator(fn):
-        @memoize
         @wraps(fn)
         def wrapper(*args, **kwargs):
             if cache.disabled:
