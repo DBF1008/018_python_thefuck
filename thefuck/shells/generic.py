@@ -8,6 +8,8 @@ from ..utils import memoize
 from ..conf import settings
 from ..system import Path
 
+_ESCAPED_SPACE_PLACEHOLDER = '__THEFUCK_ESC_SP__'
+
 
 ShellConfiguration = namedtuple('ShellConfiguration', (
     'content', 'path', 'reload', 'can_configure_automatically'))
@@ -82,11 +84,14 @@ class Generic(object):
     def split_command(self, command):
         """Split the command using shell-like syntax."""
         encoded = self.encode_utf8(command)
+        protected = encoded.replace('\\ ', _ESCAPED_SPACE_PLACEHOLDER)
 
         try:
-            splitted = [s.replace("??", "\\ ") for s in shlex.split(encoded.replace('\\ ', '??'))]
+            splitted = [s.replace(_ESCAPED_SPACE_PLACEHOLDER, '\\ ')
+                        for s in shlex.split(protected)]
         except ValueError:
-            splitted = encoded.split(' ')
+            splitted = [s.replace(_ESCAPED_SPACE_PLACEHOLDER, '\\ ')
+                        for s in protected.split(' ') if s]
 
         return self.decode_utf8(splitted)
 
