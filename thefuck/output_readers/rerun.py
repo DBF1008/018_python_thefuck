@@ -1,8 +1,9 @@
 import os
 import shlex
+import signal
 import six
 from subprocess import Popen, PIPE, STDOUT
-from psutil import AccessDenied, Process, TimeoutExpired
+from psutil import AccessDenied, NoSuchProcess, Process, TimeoutExpired
 from .. import logs
 from ..conf import settings
 
@@ -16,9 +17,24 @@ def _kill_process(proc):
     """
     try:
         proc.kill()
+    except NoSuchProcess:
+        pass
     except AccessDenied:
-        logs.debug(u'Rerun: process PID {} ({}) could not be terminated'.format(
-            proc.pid, proc.exe()))
+        logs.debug(u'Rerun: process PID {} could not be terminated'.format(
+            proc.pid))
+
+
+def _kill_process_group(pgid):
+    """Sends SIGKILL to the entire process group, catching races where the
+    group has already exited.
+
+    :type pgid: int
+
+    """
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
 
 
 def _wait_output(popen, is_slow):
@@ -31,14 +47,23 @@ def _wait_output(popen, is_slow):
     :rtype: bool
 
     """
-    proc = Process(popen.pid)
+    try:
+        proc = Process(popen.pid)
+    except NoSuchProcess:
+        return True
+
     try:
         proc.wait(settings.wait_slow_command if is_slow
                   else settings.wait_command)
         return True
     except TimeoutExpired:
-        for child in proc.children(recursive=True):
-            _kill_process(child)
+        if hasattr(os, 'killpg'):
+            _kill_process_group(popen.pid)
+        try:
+            for child in proc.children(recursive=True):
+                _kill_process(child)
+        except NoSuchProcess:
+            pass
         _kill_process(proc)
         return False
 
@@ -59,14 +84,23 @@ def get_output(script, expanded):
 
     split_expand = shlex.split(expanded)
     is_slow = split_expand[0] in settings.slow_commands if split_expand else False
+
+    popen_kwargs = dict(shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT,
+                        env=env)
+    if hasattr(os, 'setsid'):
+        popen_kwargs['preexec_fn'] = os.setsid
+
     with logs.debug_time(u'Call: {}; with env: {}; is slow: {}'.format(
             script, env, is_slow)):
-        result = Popen(expanded, shell=True, stdin=PIPE,
-                       stdout=PIPE, stderr=STDOUT, env=env)
+        result = Popen(expanded, **popen_kwargs)
         if _wait_output(result, is_slow):
             output = result.stdout.read().decode('utf-8', errors='replace')
             logs.debug(u'Received output: {}'.format(output))
             return output
         else:
+            output = result.stdout.read().decode('utf-8', errors='replace')
+            if output:
+                logs.debug(u'Received partial output: {}'.format(output))
+                return output
             logs.debug(u'Execution timed out!')
             return None

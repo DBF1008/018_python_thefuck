@@ -131,12 +131,11 @@ class TestCommand(object):
         assert Command.from_raw_script(
             ['apt-get', 'search', 'vim']) == Command(
             'apt-get search vim', 'output')
-        Popen.assert_called_once_with('apt-get search vim',
-                                      shell=True,
-                                      stdin=PIPE,
-                                      stdout=PIPE,
-                                      stderr=STDOUT,
-                                      env=os_environ)
+        expected_kwargs = dict(shell=True, stdin=PIPE, stdout=PIPE,
+                               stderr=STDOUT, env=os_environ)
+        if hasattr(os, 'setsid'):
+            expected_kwargs['preexec_fn'] = os.setsid
+        Popen.assert_called_once_with('apt-get search vim', **expected_kwargs)
 
     @pytest.mark.parametrize('script, result', [
         ([], None),
