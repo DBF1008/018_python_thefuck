@@ -19,9 +19,14 @@ def _get_raw_command(known_args):
         history = os.environ['TF_HISTORY'].split('\n')[::-1]
         alias = get_alias()
         executables = get_all_executables()
+        from ..shells import shell
+        builtins = shell.get_builtin_commands()
         for command in history:
-            diff = SequenceMatcher(a=alias, b=command).ratio()
-            if diff < const.DIFF_WITH_ALIAS or command in executables:
+            cmd_name = command.split()[0] if command.split() else ''
+            if cmd_name in executables or cmd_name in builtins:
+                return [command]
+            diff = SequenceMatcher(a=alias, b=cmd_name).ratio()
+            if diff < const.DIFF_WITH_ALIAS:
                 return [command]
     return []
 
